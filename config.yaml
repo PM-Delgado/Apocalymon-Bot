@@ -1,0 +1,5 @@
+# Example config file for raid schedule, etc.
+raids:
+  - name: Pumpkinmon
+    map: Shibuya
+    times: ["19:30", "21:30"]
