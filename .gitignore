@@ -7,3 +7,5 @@ __pycache__/
 
 # VSCode settings
 .vscode/
+
+raid_alert_standalone.py

@@ -1,0 +1,41 @@
+# DSR raid schedule as of 2025-09-08
+raids:
+  - name: "🎃 Pumpkinmon"
+    map: "Shibuya"
+    times: ["19:30", "21:30"]
+    frequency: "daily"
+
+  - name: "🪨 Gotsumon"
+    map: "Shibuya"
+    times: ["23:00", "01:00"]
+    frequency: "daily"
+
+  - name: "😈 BlackSeraphimon"
+    map: "???"
+    times: ["23:00"]
+    frequency: "biweekly"
+    base_date: "2025-05-31"
+
+  - name: "🪽 Ophanimon: Falldown Mode"
+    map: "???"
+    times: ["23:00"]
+    frequency: "biweekly"
+    base_date: "2025-06-07"
+
+  - name: "👹 Megidramon"
+    map: "???"
+    times: ["22:00"]
+    frequency: "biweekly"
+    base_date: "2025-06-08"
+
+  - name: "🤖 Omnimon"
+    map: "Valley of Darkness"
+    times: ["22:00"]
+    frequency: "biweekly"
+    base_date: "2025-06-01"
+
+  - name: "🎲 Andromon"
+    map: "Gear Savannah"
+    times: ["19:00"]
+    frequency: "rotational"
+    base_date: "2025-08-28"
