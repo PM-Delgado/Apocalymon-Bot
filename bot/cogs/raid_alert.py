@@ -324,9 +324,11 @@ class RaidAlert(commands.Cog):
                 if -300 <= time_diff <= 600 and key not in self.completed_raids:
                     print(f"[DEBUG] Will send/update alert for {key}")
                     await self.send_or_update_raid_alert(guild_id, raid)
-                # Remove from sent_messages and mark as completed if finished
+                # If finished, update message to finished state before removing
                 if key in self.sent_messages and self.compute_status(time_diff) == "finished":
-                    print(f"[DEBUG] Marking {key} as finished and removing from sent_messages")
+                    print(f"[DEBUG] Marking {key} as finished, updating message to finished state before removal")
+                    # Force update to finished state
+                    await self.send_or_update_raid_alert(guild_id, raid)
                     del self.sent_messages[key]
                     self.completed_raids.add(key)
 
@@ -340,7 +342,7 @@ class RaidAlert(commands.Cog):
     async def testalert(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         now = self.get_current_kst()
-        next_time = now + timedelta(minutes=2)
+        next_time = now + timedelta(minutes=0)
         dummy_raid = {
             "name": "😈 BlackSeraphimon",
             "map": "???",
