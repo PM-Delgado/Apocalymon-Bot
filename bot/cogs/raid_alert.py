@@ -31,9 +31,15 @@ class RaidAlert(commands.Cog):
         # {(guild_id, raid_name, scheduled_time)}
         self.completed_raids = set()
         # Timezones
-        self.kst = pytz.timezone("Asia/Seoul")
-        self.brt = pytz.timezone("America/Sao_Paulo")
-        self.lisbon = pytz.timezone("Europe/Lisbon")
+        self.timezones = {
+            "korea": pytz.timezone("Asia/Seoul"),
+            "brasilia": pytz.timezone("America/Sao_Paulo"),
+            "london": pytz.timezone("Europe/London"),
+            "new_york": pytz.timezone("America/New_York"),
+            "los_angeles": pytz.timezone("America/Los_Angeles")
+        }
+        self.default_tz = self.timezones["korea"]
+        self.lisbon = self.timezones["london"] # Only used for logging timestamps
         # Cleanup interval (7 days)
         self.last_cleanup_time = None
         self.COMPLETED_RAIDS_CLEANUP_INTERVAL = 7 * 24 * 60 * 60
@@ -52,7 +58,7 @@ class RaidAlert(commands.Cog):
     ###########################################################
 
     def log(self, level, msg):
-        # Log with timestamp in Lisbon timezone
+        # Log with timestamp in Korea Standard Time
         now = datetime.now(self.lisbon).strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{now}] [{level}] {msg}")
 
@@ -63,7 +69,7 @@ class RaidAlert(commands.Cog):
         return config["raids"]
 
     def get_current_kst(self):
-        return datetime.now(self.kst)
+        return datetime.now(self.default_tz)
 
     def clean_boss_name(self, raw_name: str) -> str:
         # Remove emoji and extra spaces
@@ -164,7 +170,8 @@ class RaidAlert(commands.Cog):
         # Build Discord embed for raid alert
         guild_id = raid.get('guild_id')  # Added guild_id to raid data
         locale = self.get_guild_locale(guild_id)
-        brt_time = raid["next_time"].astimezone(self.brt)
+        tz = self.get_guild_timezone(guild_id)
+        display_time = raid["next_time"].astimezone(tz)
         minutes_until = self.get_remaining_minutes(int(time_until_raid_seconds))
         clean_name = self.clean_boss_name(raid['name'])
         status, color = self.get_raid_status(time_until_raid_seconds)
@@ -193,7 +200,13 @@ class RaidAlert(commands.Cog):
         else:
             desc_status = raid_alerts.get('finished', "✅ **Raid finished!**")
             
-        time_str = brt_time.strftime('%H:%M')
+        total_offset = display_time.utcoffset().total_seconds()
+        offset_hours = int(total_offset // 3600)
+        offset_minutes = int((total_offset % 3600) // 60)
+        tz_offset = f"GMT{'+' if offset_hours >=0 else '-'}{abs(offset_hours)}"
+        if offset_minutes != 0:
+            tz_offset += f":{abs(offset_minutes):02d}"
+        time_str = f"{display_time.strftime('%H:%M')} ({tz_offset})"
         embed = discord.Embed(
             title=clean_name,
             color=color
@@ -236,7 +249,7 @@ class RaidAlert(commands.Cog):
         # Next daily raid time (KST)
         now = self.get_current_kst()
         raid_time = datetime.strptime(time_str, "%H:%M").time()
-        raid_dt = self.kst.localize(datetime.combine(now.date(), raid_time))
+        raid_dt = self.default_tz.localize(datetime.combine(now.date(), raid_time))
         if raid_dt <= now:
             raid_dt += timedelta(days=1)
         return raid_dt
@@ -244,12 +257,12 @@ class RaidAlert(commands.Cog):
     def get_next_biweekly_time(self, time_str, base_date_str):
         # Next biweekly raid time (KST)
         now = self.get_current_kst()
-        base_date = self.kst.localize(datetime.strptime(base_date_str, "%Y-%m-%d"))
+        base_date = self.default_tz.localize(datetime.strptime(base_date_str, "%Y-%m-%d"))
         raid_time = datetime.strptime(time_str, "%H:%M").time()
         diff_days = (now.date() - base_date.date()).days
         cycles = diff_days // 14
         next_date = base_date + timedelta(days=cycles * 14)
-        raid_dt = self.kst.localize(datetime.combine(next_date.date(), raid_time))
+        raid_dt = self.default_tz.localize(datetime.combine(next_date.date(), raid_time))
         if raid_dt <= now:
             raid_dt += timedelta(days=14)
         return raid_dt
@@ -257,7 +270,7 @@ class RaidAlert(commands.Cog):
     def get_next_rotation_time(self, base_time_str, base_date_str):
         # Next rotation raid time (e.g., Andromon)
         now = self.get_current_kst()
-        base_date = self.kst.localize(datetime.strptime(base_date_str, "%Y-%m-%d"))
+        base_date = self.default_tz.localize(datetime.strptime(base_date_str, "%Y-%m-%d"))
         base_hour, base_minute = map(int, base_time_str.split(":"))
         now_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
         base_midnight = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -310,7 +323,6 @@ class RaidAlert(commands.Cog):
                 })
         # Add test/dummy raids (from /testalert) to the list
         for guild_id, test_raid in getattr(self, 'test_raids', []):
-            test_raid['guild_id'] = guild_id  # Add guild_id to raid data
             raids.append(test_raid)
         raids.sort(key=lambda r: r["next_time"])
         return raids
@@ -337,7 +349,11 @@ class RaidAlert(commands.Cog):
         time_until_raid_seconds = (raid["next_time"] - self.get_current_kst()).total_seconds()
         embed, status = self.create_embed_content(raid, time_until_raid_seconds)
         content = self.create_content(raid, time_until_raid_seconds, role_mention, status)
-        key = (guild_id, raid["name"], raid["next_time"].strftime("%Y-%m-%d %H:%M:%S"))
+        # For real raids (no guild_id), use global key. For tests, include guild_id
+        if 'guild_id' in raid:  # Test raid
+            key = (raid['guild_id'], raid["name"], raid["scheduled_time"])
+        else:  # Real raid
+            key = (raid["name"], raid["scheduled_time"])
         self.log("DEBUG", f"send_or_update_raid_alert: key={key}, status={status}, time_until={time_until_raid_seconds}")
         # If already sent, update only if status or color changed
         if key in self.sent_messages:
@@ -349,14 +365,15 @@ class RaidAlert(commands.Cog):
                 # Only update the last field and color if changed
                 prev_status_field = prev_embed.fields[-1].value if prev_embed.fields else None
                 new_status_field = embed.fields[-1].value if embed.fields else None
-                prev_color = prev_embed.color.value if prev_embed else None
-                new_color = embed.color.value if embed else None
+                prev_color = prev_embed.color.value if prev_embed.color else None
+                new_color = embed.color.value if embed.color else None
+                
                 if prev_status_field != new_status_field or prev_color != new_color or msg.content != content:
                     # Update only the last field and color
                     prev_embed.set_field_at(len(prev_embed.fields)-1, name="", value=new_status_field, inline=False)
                     prev_embed.color = embed.color
                     await msg.edit(content=content, embed=prev_embed, allowed_mentions=discord.AllowedMentions(roles=True))
-                    self.sent_messages[key]['embed'] = prev_embed
+                    self.sent_messages[key]['embed'] = prev_embed  # Store the modified embed
                     self.sent_messages[key]['last_update'] = self.get_current_kst()
                     self.log("DEBUG", f"Updated message {msg_id} for {key}")
                 else:
@@ -382,7 +399,7 @@ class RaidAlert(commands.Cog):
     ###########################################################
     # Main Raid Alert Loop
     ###########################################################
-    @tasks.loop(seconds=10)
+    @tasks.loop(seconds=10)  # Run every minute to align with status updates
     async def raid_alert_loop(self):
         now_kst = self.get_current_kst()
         self.log("DEBUG", f"raid_alert_loop running at {now_kst}")
@@ -395,7 +412,7 @@ class RaidAlert(commands.Cog):
             for key in completed_raids_copy:
                 try:
                     raid_time = datetime.strptime(key[2], "%Y-%m-%d %H:%M:%S")
-                    raid_time = self.kst.localize(raid_time)
+                    raid_time = self.default_tz.localize(raid_time)
                     if raid_time < cutoff:
                         self.completed_raids.remove(key)
                 except Exception:
@@ -408,18 +425,22 @@ class RaidAlert(commands.Cog):
         for guild_id, config in self.guild_alert_config.items():
             # Ensure we have a valid config structure
             raid_config = config.get('raid_alerts', {})
-            self.log("DEBUG", f"Checking guild {guild_id} for alerts. Config: {raid_config}")
+            self.log("DEBUG", f"Checking guild {guild_id} for alerts.")
             if not raid_config.get('enabled', False):
                 continue
             
-            # Filter raids to only those for this guild
-            guild_raids = [r for r in upcoming_raids if r.get('guild_id') == guild_id]
-            
+            # Filter raids to only those for this guild (convert to string for type match)
+            guild_raids = [r for r in upcoming_raids if r.get('guild_id') == str(guild_id)]
+            self.log("DEBUG", f"Raids {guild_raids}.")
             for raid in guild_raids:
                 time_diff = (raid["next_time"] - now_kst).total_seconds()
-                key = (guild_id, raid["name"], raid["next_time"].strftime("%Y-%m-%d %H:%M:%S"))
-                # Only alert/update if within 10min before or 5min after
-                if -300 <= time_diff <= 600 and key not in self.completed_raids:
+                # Match key format from send_or_update_raid_alert
+                if 'guild_id' in raid:  # Test raid
+                    key = (raid['guild_id'], raid["name"], raid["scheduled_time"])
+                else:  # Real raid
+                    key = (raid["name"], raid["scheduled_time"])
+                # Update for all non-finished raids
+                if self.compute_status(time_diff) != "finished" and key not in self.completed_raids:
                     self.log("DEBUG", f"Will send/update alert for {key}")
                     await self.send_or_update_raid_alert(guild_id, raid)
                 
@@ -440,7 +461,7 @@ class RaidAlert(commands.Cog):
     # Bot Commands
     ###########################################################
 
-    @app_commands.command(name="testalert", description="Send a dummy raid alert for testing.")
+    @app_commands.command(name="testalert", description="Create a dummy raid alert for testing.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def testalert(self, interaction: discord.Interaction):
@@ -454,22 +475,40 @@ class RaidAlert(commands.Cog):
             "next_time": next_time,
             "scheduled_time": next_time.strftime("%H:%M"),
             "image": self.get_image_path(self.clean_boss_name("BlackSeraphimon")),
-            "guild_id": guild_id  # Explicitly set guild_id for locale
+            "guild_id": str(guild_id)  # Convert to string to match config keys
         }
         # Remove any previous test alert for this guild
-        self.test_raids = [(gid, raid) for (gid, raid) in self.test_raids if gid != guild_id]
+        self.test_raids = [(gid, r) for (gid, r) in self.test_raids if gid != guild_id]
         self.test_raids.append((guild_id, dummy_raid))
-        key = (guild_id, dummy_raid["name"], next_time.strftime("%Y-%m-%d %H:%M:%S"))
-        if key in self.sent_messages:
-            del self.sent_messages[key]
         await self.send_or_update_raid_alert(guild_id, dummy_raid)
-        await interaction.response.send_message("Test raid alert sent (scheduled for 10 minutes from now).", ephemeral=True)
+        await interaction.response.send_message(
+            f"Dummy raid created successfully",
+            ephemeral=True
+        )
 
-    @app_commands.command(name="ping", description="Check if the bot is alive.")
+    @app_commands.command(name="settimezone", description="Set the timezone for raid alerts.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.describe(timezone="Choose a timezone: korea, brasilia, london, new_york, los_angeles")
     @app_commands.checks.has_permissions(administrator=True)
-    async def ping(self, interaction: discord.Interaction):
-        await interaction.response.send_message("Pong! 🏓", ephemeral=True)
+    async def settimezone(self, interaction: discord.Interaction, timezone: str):
+        valid_zones = ["korea", "brasilia", "london", "new_york", "los_angeles"]
+        if timezone.lower() not in valid_zones:
+            await interaction.response.send_message(
+                f"Invalid timezone. Valid options: {', '.join(valid_zones)}",
+                ephemeral=True
+            )
+            return
+
+        guild_id = str(interaction.guild.id)
+        self.settings_manager.load_settings()
+        guild_settings = self.settings_manager.get_guild_settings(guild_id)
+        guild_settings["timezone"] = timezone.lower()
+        self.settings_manager.update_guild_settings(guild_id, guild_settings)
+        
+        await interaction.response.send_message(
+            f"Timezone set to {timezone} successfully",
+            ephemeral=True
+        )
 
     @app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
@@ -509,6 +548,15 @@ class RaidAlert(commands.Cog):
         locale = self.get_guild_locale(guild_id)
         message = locale.get('commands', {}).get('togglealert', {}).get(f'success_{state}', f"Raid alert feature has been {state}.")
         await interaction.response.send_message(message, ephemeral=True)
+
+    def get_guild_timezone(self, guild_id):
+        """Get the timezone for a guild based on their settings."""
+        self.settings_manager.load_settings()
+        guild_settings = self.settings_manager.settings.get(str(guild_id), {})
+        return self.timezones.get(
+            guild_settings.get('timezone', 'korea'),
+            self.default_tz
+        )
 
     def get_guild_locale(self, guild_id):
         """Get the locale data for a guild based on their settings."""
