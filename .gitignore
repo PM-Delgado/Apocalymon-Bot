@@ -9,3 +9,5 @@ __pycache__/
 .vscode/
 
 raid_alert_standalone.py
+start.bat
+server_settings.json

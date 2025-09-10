@@ -7,9 +7,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import yaml
+from bot.utils.settings_manager import settings_manager
 from datetime import datetime, timedelta
 import pytz
 import os
+import json
 
 # ---------------------------------------------------------
 # Configuration
@@ -22,8 +24,8 @@ GUILD_ID = int(os.getenv('GUILD_ID'))
 class RaidAlert(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # {guild_id: {enabled, channel_id, role_id}}
-        self.guild_alert_config = {}
+        self.settings_manager = settings_manager
+        self.guild_alert_config = self.settings_manager.settings
         # {(guild_id, raid_name, scheduled_time): {'message_id', 'channel_id', 'embed', 'raid', 'last_update'}}
         self.sent_messages = {}
         # {(guild_id, raid_name, scheduled_time)}
@@ -160,27 +162,34 @@ class RaidAlert(commands.Cog):
 
     def create_embed_content(self, raid, time_until_raid_seconds):
         # Build Discord embed for raid alert
+        guild_id = raid.get('guild_id')  # Added guild_id to raid data
+        locale = self.get_guild_locale(guild_id)
         brt_time = raid["next_time"].astimezone(self.brt)
         minutes_until = self.get_remaining_minutes(int(time_until_raid_seconds))
         clean_name = self.clean_boss_name(raid['name'])
         status, color = self.get_raid_status(time_until_raid_seconds)
+        
+        # Get localized strings
+        raid_alerts = locale.get('responses', {}).get('raid_alerts', {})
+        
         if status in ("upcoming", "starting"):
-            desc_status = f"⏳ Em {self.format_minutos_pt(minutes_until)}"
+            desc_status = f"⏳ " + raid_alerts.get('starts_in', "Starts in {minutes} minutes").format(minutes=minutes_until)
         elif status == "ongoing":
             minutes_ongoing = max(0, int((-time_until_raid_seconds) // 60))
-            desc_status = f"⚔️ **Começou há {self.format_minutos_pt(minutes_ongoing)}**"
+            desc_status = "⚔️ **" + raid_alerts.get('started_ago', "Started {minutes} minutes ago").format(minutes=minutes_ongoing) + "**"
         else:
-            desc_status = "✅ **Raid finalizada!**"
-        horario_str = brt_time.strftime('%H:%M')
+            desc_status = raid_alerts.get('finished', "✅ **Raid finished!**")
+            
+        time_str = brt_time.strftime('%H:%M')
         embed = discord.Embed(
             title=clean_name,
             color=color
         )
-        embed.add_field(name="", value=f"📍 {raid['map']}", inline=False)
-        embed.add_field(name="", value=f"⏰ {horario_str}", inline=False)
-        embed.add_field(name="", value=f"{desc_status}", inline=False)
+        embed.add_field(name="", value=raid_alerts.get('location', "📍 {location}").format(location=raid['map']), inline=False)
+        embed.add_field(name="", value=raid_alerts.get('time', "⏰ {time}").format(time=time_str), inline=False)
+        embed.add_field(name="", value=desc_status, inline=False)
         embed.set_thumbnail(url=self.get_image_path(clean_name))
-        embed.set_footer(text="DSR Raid Alert | Done by Douleur")
+        embed.set_footer(text=raid_alerts.get('footer', "DSR Raid Alert | Done by Douleur"))
         map_image_url = self.get_map_image_url(raid['map'], clean_name)
         if map_image_url:
             embed.set_image(url=map_image_url)
@@ -188,16 +197,22 @@ class RaidAlert(commands.Cog):
 
     def create_content(self, raid, time_until_raid_seconds, role_mention, status):
         # Build message content for raid alert
+        guild_id = raid.get('guild_id')
+        locale = self.get_guild_locale(guild_id)
+        raid_alerts = locale.get('responses', {}).get('raid_alerts', {})
         minutes_until = self.get_remaining_minutes(int(time_until_raid_seconds))
+        
         if status == "ongoing":
             minutes_ongoing = max(0, int((-time_until_raid_seconds) // 60))
-            ongoing_str = f"Começou há {self.format_minutos_pt(minutes_ongoing)}"
+            ongoing_str = raid_alerts.get('started_ago', "Started {minutes} minutes ago").format(minutes=minutes_ongoing)
         if status in ("upcoming", "starting"):
-            content = f"||{role_mention}||\n**{raid['name'].upper()}** | Começa em {self.format_minutos_pt(minutes_until)}!"
+            base_str = raid_alerts.get('starts_in', "Starts in {minutes} minutes").format(minutes=minutes_until)
+            content = f"||{role_mention}||\n**{raid['name'].upper()}** | {base_str}!"
         elif status == "ongoing":
             content = f"||{role_mention}||\n**{raid['name'].upper()}** | {ongoing_str}!"
         else:
-            content = f"||{role_mention}||\n**{raid['name'].upper()}** | Raid finalizada!"
+            finished_str = raid_alerts.get('finished', "Raid finished")
+            content = f"||{role_mention}||\n**{raid['name'].upper()}** | {finished_str}!"
         return content
 
     ###########################################################
@@ -282,6 +297,7 @@ class RaidAlert(commands.Cog):
                 })
         # Add test/dummy raids (from /testalert) to the list
         for guild_id, test_raid in getattr(self, 'test_raids', []):
+            test_raid['guild_id'] = guild_id  # Add guild_id to raid data
             raids.append(test_raid)
         raids.sort(key=lambda r: r["next_time"])
         return raids
@@ -290,12 +306,13 @@ class RaidAlert(commands.Cog):
     # Send or Update Raid Alert Message
     ###########################################################
     async def send_or_update_raid_alert(self, guild_id, raid):
-        config = self.guild_alert_config.get(guild_id)
-        if not config or not config.get("enabled"):
+        config = self.guild_alert_config.get(str(guild_id))
+        raid_config = config.get('raid_alerts') if config else None
+        if not config or not raid_config.get("enabled"):
             self.log("DEBUG", f"Guild {guild_id} not enabled or config missing.")
             return
-        channel_id = config.get("channel_id")
-        role_id = config.get("role_id")
+        channel_id = raid_config.get("channel_id")
+        role_id = raid_config.get("role_id")
         if not channel_id or not role_id:
             self.log("DEBUG", f"Guild {guild_id} missing channel or role config.")
             return
@@ -376,13 +393,28 @@ class RaidAlert(commands.Cog):
 
         # For each enabled guild, send/update alerts
         for guild_id, config in self.guild_alert_config.items():
-            self.log("DEBUG", f"Checking guild {guild_id} for alerts. Config: {config}")
-            if not config.get("enabled"):
+            # Handle both new dict format and legacy string format
+            if isinstance(config, str):
+                # Migrate legacy language-only format to new structure
+                config = {
+                    "language": config,
+                    "raid_alerts": {
+                        "enabled": False,
+                        "channel_id": None, 
+                        "role_id": None
+                    }
+                }
+                self.guild_alert_config[guild_id] = config
+                self.settings_manager.save_settings()
+
+            # Ensure we have a valid config structure
+            raid_config = config.get('raid_alerts', {})
+            self.log("DEBUG", f"Checking guild {guild_id} for alerts. Config: {raid_config}")
+            if not raid_config.get('enabled', False):
                 continue
             for raid in upcoming_raids:
                 time_diff = (raid["next_time"] - now_kst).total_seconds()
                 key = (guild_id, raid["name"], raid["next_time"].strftime("%Y-%m-%d %H:%M:%S"))
-                self.log("DEBUG", f"Considering raid {raid['name']} at {raid['next_time']} (key={key}, time_diff={time_diff})")
                 # Only alert/update if within 10min before or 5min after
                 if -300 <= time_diff <= 600 and key not in self.completed_raids:
                     self.log("DEBUG", f"Will send/update alert for {key}")
@@ -404,13 +436,14 @@ class RaidAlert(commands.Cog):
     # Bot Commands
     ###########################################################
 
-    @discord.app_commands.command(name="testalert", description="Send a dummy raid alert for testing.")
-    @discord.app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="testalert", description="Send a dummy raid alert for testing.")
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.checks.has_permissions(administrator=True)
     async def testalert(self, interaction: discord.Interaction):
         # Send a test/dummy raid alert for this guild
         guild_id = interaction.guild.id
         now = self.get_current_kst()
-        next_time = now + timedelta(minutes=0)
+        next_time = now + timedelta(minutes=5)
         dummy_raid = {
             "name": "😈 BlackSeraphimon",
             "map": "???",
@@ -427,48 +460,76 @@ class RaidAlert(commands.Cog):
         await self.send_or_update_raid_alert(guild_id, dummy_raid)
         await interaction.response.send_message("Test raid alert sent (scheduled for 10 minutes from now).", ephemeral=True)
 
-    @discord.app_commands.command(name="ping", description="Check if the bot is alive.")
-    @discord.app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="ping", description="Check if the bot is alive.")
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.checks.has_permissions(administrator=True)
     async def ping(self, interaction: discord.Interaction):
         await interaction.response.send_message("Pong! 🏓", ephemeral=True)
 
-    @discord.app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
-    @discord.app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.checks.has_permissions(administrator=True)
     async def setalertchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        # Set the channel for raid alerts
-        guild_id = interaction.guild.id
-        config = self.guild_alert_config.get(guild_id, {})
-        if not config.get("enabled", False):
-            await interaction.response.send_message("Raid alert feature is not enabled. Use /togglealert to enable it first.", ephemeral=True)
-            return
-        self.guild_alert_config.setdefault(guild_id, {})["channel_id"] = channel.id
+        guild_id = str(interaction.guild.id)
+        self.settings_manager.load_settings()
+        current_settings = self.settings_manager.get_guild_settings(guild_id)
+        raid_alerts = current_settings.get('raid_alerts', {})
+        raid_alerts['channel_id'] = channel.id
+        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
+        
         await interaction.response.send_message(f"Raid alert channel set to {channel.mention}", ephemeral=True)
 
-    @discord.app_commands.command(name="setalertrole", description="Set the role to tag for raid alerts.")
-    @discord.app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="setalertrole", description="Set the role to tag for raid alerts.")
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.checks.has_permissions(administrator=True)
     async def setalertrole(self, interaction: discord.Interaction, role: discord.Role):
-        # Set the role to tag for raid alerts
-        guild_id = interaction.guild.id
-        config = self.guild_alert_config.get(guild_id, {})
-        if not config.get("enabled", False):
-            await interaction.response.send_message("Raid alert feature is not enabled. Use /togglealert to enable it first.", ephemeral=True)
-            return
-        self.guild_alert_config.setdefault(guild_id, {})["role_id"] = role.id
+        guild_id = str(interaction.guild.id)
+        current_settings = self.settings_manager.get_guild_settings(guild_id)
+        raid_alerts = current_settings.get('raid_alerts', {})
+        raid_alerts['role_id'] = role.id
+        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
+        
         await interaction.response.send_message(f"Raid alert role set to {role.mention}", ephemeral=True)
 
-    @discord.app_commands.command(name="togglealert", description="Enable or disable the raid alert feature.")
-    @discord.app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="togglealert", description="Enable or disable the raid alert feature.")
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.checks.has_permissions(administrator=True)
     async def togglealert(self, interaction: discord.Interaction, enabled: bool):
-        # Enable or disable the raid alert feature
-        guild_id = interaction.guild.id
-        if guild_id not in self.guild_alert_config:
-            self.guild_alert_config[guild_id] = {}
-        self.guild_alert_config[guild_id]["enabled"] = enabled
+        guild_id = str(interaction.guild.id)
+        current_settings = self.settings_manager.get_guild_settings(guild_id)
+        raid_alerts = current_settings.get('raid_alerts', {})
+        raid_alerts['enabled'] = enabled
+        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
         state = "enabled" if enabled else "disabled"
-        await interaction.response.send_message(f"Raid alert feature has been {state}.", ephemeral=True)
+        locale = self.get_guild_locale(guild_id)
+        message = locale.get('commands', {}).get('togglealert', {}).get(f'success_{state}', f"Raid alert feature has been {state}.")
+        await interaction.response.send_message(message, ephemeral=True)
+
+    def get_guild_locale(self, guild_id):
+        """Get the locale data for a guild based on their settings."""
+        self.settings_manager.load_settings()
+        guild_settings = self.settings_manager.settings.get(str(guild_id), {})
+        lang = guild_settings.get('language', 'english')
+        lang_map = {'english': 'en', 'portuguese': 'pt', 'spanish': 'es'}
+        lang_code = lang_map.get(lang, 'en')
+        locale_path = f'locales/{lang_code}.json'
+        
+        if not os.path.exists(locale_path):
+            return {}
+        
+        with open(locale_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
 
 ###########################################################
 # Cog Setup
 ###########################################################
 async def setup(bot):
-    await bot.add_cog(RaidAlert(bot), guild=discord.Object(id=GUILD_ID))
+    guild_id = int(os.getenv('GUILD_ID'))
+    cog = RaidAlert(bot)
+    await bot.add_cog(cog)
+    
+    # Move all commands to the guild
+    for command in cog.walk_app_commands():
+        command.guild = discord.Object(id=guild_id)
+    
+    print(f"[DEBUG] RaidAlert commands moved to guild {guild_id}")

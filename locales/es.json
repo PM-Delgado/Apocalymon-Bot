@@ -1,0 +1,20 @@
+{
+  "commands": {
+    "set_language": {
+      "success": "Idioma establecido en Español",
+      "invalid_language": "Idioma no válido. Opciones disponibles: english, portuguese, spanish"
+    }
+  },
+  "responses": {
+    "welcome": "¡Bienvenido al servidor!",
+    "help": "Contenido de ayuda en Español",
+    "raid_alerts": {
+      "starts_in": "Comienza en {minutes} minutos",
+      "started_ago": "Comenzó hace {minutes} minutos",
+      "finished": "✅ **¡Incursión finalizada!**",
+      "footer": "DSR Raid Alert | Hecho por Douleur",
+      "time": "⏰ {time}",
+      "location": "📍 {location}"
+    }
+  }
+}

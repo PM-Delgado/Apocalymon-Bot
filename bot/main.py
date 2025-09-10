@@ -22,7 +22,7 @@ logger = logging.getLogger('discord')
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents)
 
 # Log every command usage (text and slash)
 @bot.listen('on_command')
@@ -36,13 +36,25 @@ async def log_slash_command(interaction, command):
 @bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    logger.info(f'Loaded cogs: {list(bot.cogs.keys())}')
+    
+    # Debug: Check loaded commands
+    logger.info("=== COMMAND DEBUG INFO ===")
+    logger.info(f"Total tree commands: {len(list(bot.tree.walk_commands()))}")
+    
+    for command in bot.tree.walk_commands():
+        # Check if it's a guild-specific command
+        guild_info = "Global" if not hasattr(command, 'guild') or command.guild is None else f"Guild: {command.guild.id}"
+        logger.info(f"Command: {command.name} | {guild_info}")
+    
+    logger.info("========================")
     logger.info('------')
 
 @bot.command()
 @commands.is_owner()
 async def reload(ctx):
     """Reload all cogs (owner only)."""
-    cogs = ['bot.cogs.raid_alert']
+    cogs = ['bot.cogs.raid_alert', 'bot.cogs.language_config']
     for ext in cogs:
         try:
             await bot.reload_extension(ext)
@@ -53,13 +65,23 @@ async def reload(ctx):
 @bot.command()
 @commands.is_owner()
 async def sync(ctx):
-    """Manually sync all slash commands to the test guild (owner only)."""
+    """Manually sync commands to test guild (owner only)."""
     try:
         guild = discord.Object(id=GUILD_ID)
+        
+        # Debug info before sync
+        commands_to_sync = [cmd for cmd in bot.tree.walk_commands() if GUILD_ID in (cmd.guild_ids or [])]
+        logger.info(f"Commands that should sync to guild {GUILD_ID}: {[cmd.name for cmd in commands_to_sync]}")
+        
         synced = await bot.tree.sync(guild=guild)
-        logger.info(f'Synced {len(synced)} commands to guild {GUILD_ID}.')
+        logger.info(f'Synced {len(synced)} commands to test guild {GUILD_ID}')
+        logger.info(f'Synced commands: {[cmd.name for cmd in synced]}')
+        
+        await ctx.send(f'✅ Synced {len(synced)} commands: {", ".join([cmd.name for cmd in synced])}')
+        
     except Exception as e:
         logger.error(f'Failed to sync commands: {e}')
+        await ctx.send(f'❌ Failed to sync: {e}')
 
 async def load_cogs():
     for filename in os.listdir("./bot/cogs"):
