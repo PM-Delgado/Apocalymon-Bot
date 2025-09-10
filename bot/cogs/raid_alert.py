@@ -169,8 +169,21 @@ class RaidAlert(commands.Cog):
         clean_name = self.clean_boss_name(raid['name'])
         status, color = self.get_raid_status(time_until_raid_seconds)
         
-        # Get localized strings
+        # Get localized strings with fallback to English
         raid_alerts = locale.get('responses', {}).get('raid_alerts', {})
+        
+        # Load English defaults
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        en_path = os.path.join(base_dir, 'locales/en.json')
+        try:
+            with open(en_path, 'r', encoding='utf-8') as f:
+                en_alerts = json.load(f).get('responses', {}).get('raid_alerts', {})
+                # Merge with English as fallback
+                raid_alerts = {**en_alerts, **raid_alerts}
+        except Exception as e:
+            self.log("ERROR", f"Failed to load English fallback: {str(e)}")
+            
+        self.log("DEBUG", f"Localized texts for {guild_id} - {list(raid_alerts.keys())}")
         
         if status in ("upcoming", "starting"):
             desc_status = f"⏳ " + raid_alerts.get('starts_in', "Starts in {minutes} minutes").format(minutes=minutes_until)
@@ -393,32 +406,23 @@ class RaidAlert(commands.Cog):
 
         # For each enabled guild, send/update alerts
         for guild_id, config in self.guild_alert_config.items():
-            # Handle both new dict format and legacy string format
-            if isinstance(config, str):
-                # Migrate legacy language-only format to new structure
-                config = {
-                    "language": config,
-                    "raid_alerts": {
-                        "enabled": False,
-                        "channel_id": None, 
-                        "role_id": None
-                    }
-                }
-                self.guild_alert_config[guild_id] = config
-                self.settings_manager.save_settings()
-
             # Ensure we have a valid config structure
             raid_config = config.get('raid_alerts', {})
             self.log("DEBUG", f"Checking guild {guild_id} for alerts. Config: {raid_config}")
             if not raid_config.get('enabled', False):
                 continue
-            for raid in upcoming_raids:
+            
+            # Filter raids to only those for this guild
+            guild_raids = [r for r in upcoming_raids if r.get('guild_id') == guild_id]
+            
+            for raid in guild_raids:
                 time_diff = (raid["next_time"] - now_kst).total_seconds()
                 key = (guild_id, raid["name"], raid["next_time"].strftime("%Y-%m-%d %H:%M:%S"))
                 # Only alert/update if within 10min before or 5min after
                 if -300 <= time_diff <= 600 and key not in self.completed_raids:
                     self.log("DEBUG", f"Will send/update alert for {key}")
                     await self.send_or_update_raid_alert(guild_id, raid)
+                
                 # If finished, update message to finished state before removing
                 if key in self.sent_messages and self.compute_status(time_diff) == "finished":
                     self.log("INFO", f"Marking {key} as finished, updating message to finished state before removal")
@@ -450,6 +454,7 @@ class RaidAlert(commands.Cog):
             "next_time": next_time,
             "scheduled_time": next_time.strftime("%H:%M"),
             "image": self.get_image_path(self.clean_boss_name("BlackSeraphimon")),
+            "guild_id": guild_id  # Explicitly set guild_id for locale
         }
         # Remove any previous test alert for this guild
         self.test_raids = [(gid, raid) for (gid, raid) in self.test_raids if gid != guild_id]
@@ -507,18 +512,35 @@ class RaidAlert(commands.Cog):
 
     def get_guild_locale(self, guild_id):
         """Get the locale data for a guild based on their settings."""
-        self.settings_manager.load_settings()
-        guild_settings = self.settings_manager.settings.get(str(guild_id), {})
-        lang = guild_settings.get('language', 'english')
-        lang_map = {'english': 'en', 'portuguese': 'pt', 'spanish': 'es'}
-        lang_code = lang_map.get(lang, 'en')
-        locale_path = f'locales/{lang_code}.json'
-        
-        if not os.path.exists(locale_path):
+        self.log("DEBUG", f"get_guild_locale received guild_id: {guild_id} ({type(guild_id)})")
+        try:
+            # Ensure guild_id is string for config lookup
+            guild_id_str = str(guild_id)
+            self.settings_manager.load_settings()
+            guild_settings = self.settings_manager.settings.get(str(guild_id), {})
+            lang = guild_settings.get('language', 'english').lower()
+            lang_map = {'english': 'en', 'portuguese': 'pt', 'spanish': 'es'}
+            lang_code = lang_map.get(lang, 'en')
+            
+            # Get absolute path to locales directory
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            locale_path = os.path.join(base_dir, 'locales', f'{lang_code}.json')
+            
+            self.log("DEBUG", f"Loading locale for guild {guild_id}: {lang} -> {locale_path}")
+            
+            if not os.path.exists(locale_path):
+                self.log("ERROR", f"Locale file not found: {locale_path}")
+                # Fallback to English
+                locale_path = os.path.join(base_dir, 'locales', 'en.json')
+                
+            with open(locale_path, 'r', encoding='utf-8') as f:
+                locale_data = json.load(f)
+                self.log("DEBUG", f"Loaded locale for {guild_id}: {list(locale_data['responses']['raid_alerts'].keys())}")
+                return locale_data
+                
+        except Exception as e:
+            self.log("ERROR", f"Failed to load locale for guild {guild_id}: {str(e)}")
             return {}
-        
-        with open(locale_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
 
 ###########################################################
 # Cog Setup

@@ -12,7 +12,7 @@
       "starts_in": "Comienza en {minutes} minutos",
       "started_ago": "Comenzó hace {minutes} minutos",
       "finished": "✅ **¡Incursión finalizada!**",
-      "footer": "DSR Raid Alert | Hecho por Douleur",
+      "footer": "Raid Alert | Apocalymon | Hecho por Douleur",
       "time": "⏰ {time}",
       "location": "📍 {location}"
     }
