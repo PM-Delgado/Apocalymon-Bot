@@ -2,19 +2,32 @@
   "commands": {
     "set_language": {
       "success": "Language has been set to English",
-      "invalid_language": "Invalid language. Available options: english, portuguese, spanish"
+      "invalid_language": "Invalid language. Please choose a supported language."
+    },
+    "togglealert": {
+      "success_enabled": "Raid Alert feature has been enabled.",
+      "success_disabled": "Raid Alert feature has been disabled."
+    },
+    "settimezone": {
+      "success": "Timezone **{timezone}** have been successfully set.",
+      "invalid_timezone": "Invalid timezone. Please choose a supported timezone."
+    },
+    "setalertchannel": {
+        "success": "Channel {channel} has been successfully set as the Raid Alert channel."
+    },
+    "setalertrole": {
+      "success": "Role {role} has been successfully set as the Raid Alert role to mention."
+    },
+    "testalert": {
+      "success": "Test raid alert has been sent."
     }
   },
-  "responses": {
-    "welcome": "Welcome to the server!",
-    "help": "Help content in English",
-    "raid_alerts": {
-      "starts_in": "Starts in {minutes} minutes",
-      "started_ago": "Started {minutes} minutes ago", 
-      "finished": "✅ **Raid finished!**",
-      "footer": "Raid Alert | Apocalymon | Done by Douleur",
-      "time": "⏰ {time}",
-      "location": "📍 {location}"
-    }
+  "raid_alerts": {
+    "starts_in": "Starts in {minutes} minutes",
+    "started_ago": "Started {minutes} minutes ago", 
+    "finished": "✅ **Raid finished!**",
+    "footer": "Raid Alert | Apocalymon | Done by Douleur",
+    "time": "⏰ {time}",
+    "location": "📍 {location}"
   }
 }

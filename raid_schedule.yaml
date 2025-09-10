@@ -1,41 +1,53 @@
-# DSR raid schedule as of 2025-09-08
 raids:
   - name: "🎃 Pumpkinmon"
     map: "Shibuya"
-    times: ["19:30", "21:30"]
     frequency: "daily"
+    times: ["18:30", "20:30"]
+    image: "Pumpkinmon.png"
+    map_image: "Pumpkinmon_map.jpg"
 
   - name: "🪨 Gotsumon"
-    map: "Shibuya"
-    times: ["23:00", "01:00"]
-    frequency: "daily"
+    map: "Campground"
+    frequency: "biweekly" 
+    base_date: "2025-09-01"
+    times: ["19:00"]
+    image: "Gotsumon.png"
+    map_image: "Gotsumon_map.jpg"
 
   - name: "😈 BlackSeraphimon"
-    map: "???"
-    times: ["23:00"]
-    frequency: "biweekly"
-    base_date: "2025-05-31"
-
-  - name: "🪽 Ophanimon: Falldown Mode"
-    map: "???"
-    times: ["23:00"]
-    frequency: "biweekly"
-    base_date: "2025-06-07"
-
-  - name: "👹 Megidramon"
-    map: "???"
-    times: ["22:00"]
-    frequency: "biweekly"
-    base_date: "2025-06-08"
-
-  - name: "🤖 Omnimon"
     map: "Valley of Darkness"
-    times: ["22:00"]
-    frequency: "biweekly"
-    base_date: "2025-06-01"
-
-  - name: "🎲 Andromon"
-    map: "Gear Savannah"
+    frequency: "daily"
     times: ["19:00"]
-    frequency: "rotational"
-    base_date: "2025-08-28"
+    image: "BlackSeraphimon.png"
+    map_image: "BlackSeraphimon_map.jpg"
+
+  - name: "👹 Ophanimon: Falldown Mode"
+    map: "Subway Station"
+    frequency: "rotation"
+    base_date: "2025-09-01"
+    times: ["12:00"]
+    image: "Ophanimon.png"
+    map_image: "Ophanimon_map.jpg"
+
+  - name: "🤖 Megidramon"
+    map: "???"
+    frequency: "biweekly"
+    base_date: "2025-09-07"
+    times: ["21:00"]
+    image: "Megidramon.png"
+    map_image: "Megidramon_map.jpg"
+
+  - name: "🎲 Omnimon"
+    map: "Gear Savannah"
+    frequency: "daily"
+    times: ["20:00"]
+    image: "Omnimon.png"
+    map_image: "Omnimon_map.jpg"
+
+  - name: "🪽 Andromon"
+    map: "Gear Savannah"
+    frequency: "rotation"
+    base_date: "2025-09-01"
+    times: ["14:00"]
+    image: "Andromon.png"
+    map_image: "Andromon_map.jpg"

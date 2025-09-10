@@ -1,4 +1,5 @@
 import discord
+import logging
 from discord.ext import commands
 from discord import app_commands
 from bot.utils.settings_manager import settings_manager
@@ -11,13 +12,12 @@ class LanguageConfig(commands.Cog):
         self.settings_manager = settings_manager
 
     @app_commands.command(
-        name="language",
-        description="Set the server's language preference")
+        name="setlanguage",
+        description="Set the server's language preference.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
-    @app_commands.describe(language="Choose a language: english, portuguese, spanish")
+    @app_commands.describe(language="Choose between supported languages: english, portuguese, spanish")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_language(self, interaction: discord.Interaction, language: str):
-        """Slash command implementation"""
+    async def set_language(self, interaction: discord.Interaction, language: str) -> None:
         valid_languages = ['english', 'portuguese', 'spanish']
         lang_lower = language.lower()
         
@@ -34,13 +34,6 @@ class LanguageConfig(commands.Cog):
             locale = json.load(f)
         await interaction.response.send_message(locale['commands']['set_language']['success'], ephemeral=True)
         
-async def setup(bot):
-    guild_id = int(os.getenv('GUILD_ID'))
+async def setup(bot: commands.Bot) -> None:
     cog = LanguageConfig(bot)
     await bot.add_cog(cog)
-    
-    # Move the command to the guild
-    for command in cog.walk_app_commands():
-        command.guild = discord.Object(id=guild_id)
-    
-    print(f"[DEBUG] LanguageConfig commands moved to guild {guild_id}")

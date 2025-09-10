@@ -2,19 +2,32 @@
   "commands": {
     "set_language": {
       "success": "Idioma establecido en Español",
-      "invalid_language": "Idioma no válido. Opciones disponibles: english, portuguese, spanish"
+      "invalid_language": "Idioma no válido. Por favor, elige un idioma compatible."
+    },
+    "togglealert": {
+      "success_enabled": "La función de alerta de incursión ha sido habilitada.",
+      "success_disabled": "La función de alerta de incursión ha sido deshabilitada."
+    },
+    "settimezone": {
+      "success": "La zona horaria **{timezone}** ha sido establecida con éxito.",
+      "invalid_timezone": "Zona horaria no válida. Por favor, elige una zona horaria compatible."
+    },
+    "setalertchannel": {
+      "success": "El canal {channel} ha sido establecido con éxito como el canal de Alerta de Incursión."
+    },
+    "setalertrole": {
+      "success": "El rol {role} ha sido establecido con éxito como el rol de Alerta de Incursión para mencionar."
+    },
+    "testalert": {
+      "success": "La alerta de incursión de prueba ha sido enviada."
     }
   },
-  "responses": {
-    "welcome": "¡Bienvenido al servidor!",
-    "help": "Contenido de ayuda en Español",
-    "raid_alerts": {
-      "starts_in": "Comienza en {minutes} minutos",
-      "started_ago": "Comenzó hace {minutes} minutos",
-      "finished": "✅ **¡Incursión finalizada!**",
-      "footer": "Raid Alert | Apocalymon | Hecho por Douleur",
-      "time": "⏰ {time}",
-      "location": "📍 {location}"
-    }
+  "raid_alerts": {
+    "starts_in": "Comienza en {minutes} minutos",
+    "started_ago": "Comenzó hace {minutes} minutos",
+    "finished": "✅ **¡Incursión finalizada!**",
+    "footer": "Raid Alert | Apocalymon | Hecho por Douleur",
+    "time": "⏰ {time}",
+    "location": "📍 {location}"
   }
 }

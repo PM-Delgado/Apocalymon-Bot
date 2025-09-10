@@ -2,19 +2,32 @@
   "commands": {
     "set_language": {
       "success": "Idioma definido para Português",
-      "invalid_language": "Idioma inválido. Opções disponíveis: english, portuguese, spanish"
+      "invalid_language": "Idioma inválido. Por favor, escolha um idioma suportado."
+    },
+    "togglealert": {
+      "success_enabled": "A funcionalidade de alerta de raid foi ativada.",
+      "success_disabled": "A funcionalidade de alerta de raid foi desativada."
+    },
+    "settimezone": {
+      "success": "Fuso horário **{timezone}** foi definido com sucesso.",
+      "invalid_timezone": "Fuso horário inválido. Por favor, escolha um fuso horário suportado."
+    },
+    "setalertchannel": {
+      "success": "Canal {channel} foi definido com sucesso como o canal de Alerta de Raid."
+    },
+    "setalertrole": {
+      "success": "Função {role} foi definida com sucesso como a função de Alerta de Raid para mencionar."
+    },
+    "testalert": {
+      "success": "Alerta de raid de teste foi enviado."
     }
   },
-  "responses": {
-    "welcome": "Bem-vindo ao servidor!",
-    "help": "Conteúdo de ajuda em Português",
-    "raid_alerts": {
-      "starts_in": "Começa em {minutes} minutos",
-      "started_ago": "Começou há {minutes} minutos",
-      "finished": "✅ **Raid finalizada!**",
-      "footer": "Raid Alert | Apocalymon | Feito por Douleur",
-      "time": "⏰ {time}",
-      "location": "📍 {location}"
-    }
+  "raid_alerts": {
+    "starts_in": "Começa em {minutes} minutos",
+    "started_ago": "Começou há {minutes} minutos",
+    "finished": "✅ **Raid finalizada!**",
+    "footer": "Raid Alert | Apocalymon | Feito por Douleur",
+    "time": "⏰ {time}",
+    "location": "📍 {location}"
   }
 }
