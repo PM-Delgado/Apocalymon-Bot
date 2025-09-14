@@ -10,8 +10,6 @@ import os
 import json
 import re
 
-GUILD_ID = int(os.getenv('GUILD_ID'))
-
 class RaidAlert(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -401,7 +399,7 @@ class RaidAlert(commands.Cog):
     ###########################################################
 
     @app_commands.command(name="testalert", description="Create a dummy raid alert for testing.")
-    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def testalert(self, interaction: discord.Interaction):
         # Send a test/dummy raid alert for this guild
@@ -427,7 +425,7 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalerttz", description="Set the timezone for raid alerts.")
-    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.describe(timezone="Choose between supported timezones: korea, brasilia, london, new_york, los_angeles")
     @app_commands.checks.has_permissions(administrator=True)
     async def settimezone(self, interaction: discord.Interaction, timezone: str):
@@ -452,7 +450,7 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
-    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild.id)
@@ -469,7 +467,7 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalertrole", description="Set the role to tag for raid alerts.")
-    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertrole(self, interaction: discord.Interaction, role: discord.Role):
         guild_id = str(interaction.guild.id)
@@ -485,7 +483,7 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="togglealert", description="Enable or disable the raid alert feature.")
-    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def togglealert(self, interaction: discord.Interaction, enabled: bool):
         guild_id = str(interaction.guild.id)
@@ -547,4 +545,3 @@ async def setup(bot):
     for command in cog.walk_app_commands():
         command.guild = discord.Object(id=guild_id)
     
-    logger = logging.getLogger('discord')
