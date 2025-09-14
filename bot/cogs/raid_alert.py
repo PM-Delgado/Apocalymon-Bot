@@ -3,7 +3,8 @@ import logging
 from discord import app_commands
 from discord.ext import commands, tasks
 import yaml
-from bot.utils.settings_manager import settings_manager
+from bot.main import supabase
+
 from datetime import datetime, timedelta
 import pytz
 import os
@@ -13,8 +14,7 @@ import re
 class RaidAlert(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.settings_manager = settings_manager
-        self.guild_alert_config = self.settings_manager.settings
+        self.guild_alert_config = {}
         self.sent_messages = {}
         self.completed_raids = set()
         # Timezones
@@ -49,11 +49,36 @@ class RaidAlert(commands.Cog):
         log_method = getattr(logger, level.lower(), logger.info)
         log_method(msg)
 
-    def _load_raid_schedule(self, config_path="raid_schedule.yaml"):
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "raid_schedule.yaml")
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        return config["raids"]
+    def _load_raid_schedule(self):
+        # Fetch raid definitions
+        raids_res = supabase.table('raids').select('raid_id, name, map, frequency, base_date, image_url, map_image_url').execute()
+        # Fetch all raid times
+        times_res = supabase.table('raid_times').select('raid_id, time').execute()
+        
+        # Group times by raid_id
+        times_by_raid = {}
+        for time_entry in times_res.data:
+            raid_id = time_entry['raid_id']
+            time_str = datetime.strptime(time_entry['time'], "%H:%M:%S").strftime("%H:%M")
+            if raid_id not in times_by_raid:
+                times_by_raid[raid_id] = []
+            times_by_raid[raid_id].append(time_str)
+        
+        # Build raids data with associated times
+        raids_data = []
+        for raid in raids_res.data:
+            raids_data.append({
+                "id": raid['raid_id'],
+                "name": raid['name'],
+                "map": raid['map'],
+                "frequency": raid['frequency'],
+                "base_date": datetime.strptime(raid['base_date'], "%Y-%m-%d").strftime("%Y-%m-%d") if raid['base_date'] else None,
+                "times": times_by_raid.get(raid['raid_id'], []),
+                "image": raid['image_url'],
+                "map_image": raid['map_image_url']
+            })
+        return raids_data
+
 
     def _get_current_kst(self):
         return datetime.now(self.default_tz)
@@ -67,15 +92,15 @@ class RaidAlert(commands.Cog):
 
     def _get_image_url(self, raid_name: str) -> str:
         raid_config = self._get_raid_config(raid_name)
-        if image_file := raid_config.get("image"):
-            return f"{os.getenv('DSR_RAID_ALERT_ICONS')}/{image_file}?v={int(datetime.now().timestamp())}"
-        raise ValueError(f"❌ Missing image config for {raid_name}")
+        if image_url := raid_config.get("image"):
+            return f"{image_url}?v={int(datetime.now().timestamp())}"
+        raise ValueError(f"❌ Missing image URL for {raid_name}")
 
     def _get_map_url(self, raid_name: str) -> str: 
         raid_config = self._get_raid_config(raid_name)
-        if map_file := raid_config.get("map_image"):
-            return f"{os.getenv('DSR_RAID_ALERT_MAPS')}/{map_file}?v={int(datetime.now().timestamp())}"
-        raise ValueError(f"❌ Missing map image config for {raid_name}")
+        if map_image_url := raid_config.get("map_image"):
+            return f"{map_image_url}?v={int(datetime.now().timestamp())}"
+        raise ValueError(f"❌ Missing map image URL for {raid_name}")
 
     def _get_remaining_minutes(self, seconds_total: int) -> int:
         # Round up if more than 30 seconds
@@ -235,7 +260,7 @@ class RaidAlert(commands.Cog):
             name = cfg["name"]
             map_name = cfg["map"]
             freq = cfg.get("frequency", "daily")
-            times = cfg.get("times", [])
+            times = cfg.get("times", [])  # Now comes from Supabase raid_times table
             base_date = cfg.get("base_date")
             if freq == "rotation":
                 base_time = times[0]
@@ -271,13 +296,16 @@ class RaidAlert(commands.Cog):
     ###########################################################
 
     async def _send_or_update_raid_alert(self, guild_id, raid):
-        config = self.guild_alert_config.get(str(guild_id))
-        raid_config = config.get('raid_alerts') if config else None
-        if not config or not raid_config.get("enabled"):
+        # Get settings from guild_settings and guild_raid_alerts
+        guild_settings = supabase.table('guild_settings').select('raid_alerts_enabled').eq('guild_id', guild_id).execute().data
+        raid_alerts = supabase.table('guild_raid_alerts').select('*').eq('guild_id', guild_id).execute().data
+        
+        if not guild_settings or not raid_alerts or not guild_settings[0].get('raid_alerts_enabled'):
             self._log("DEBUG", f"❌ Guild {guild_id} not enabled or config missing.")
             return
-        channel_id = raid_config.get("channel_id")
-        role_id = raid_config.get("role_id")
+        
+        channel_id = raid_alerts[0].get('alert_channel')
+        role_id = raid_alerts[0].get('alert_role')
         if not channel_id or not role_id:
             self._log("DEBUG", f"❌ Guild {guild_id} missing channel or role config.")
             return
@@ -399,7 +427,7 @@ class RaidAlert(commands.Cog):
     ###########################################################
 
     @app_commands.command(name="testalert", description="Create a dummy raid alert for testing.")
-    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def testalert(self, interaction: discord.Interaction):
         # Send a test/dummy raid alert for this guild
@@ -425,7 +453,7 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalerttz", description="Set the timezone for raid alerts.")
-    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.describe(timezone="Choose between supported timezones: korea, brasilia, london, new_york, los_angeles")
     @app_commands.checks.has_permissions(administrator=True)
     async def settimezone(self, interaction: discord.Interaction, timezone: str):
@@ -439,10 +467,10 @@ class RaidAlert(commands.Cog):
             )
             return
 
-        self.settings_manager.load_settings()
-        guild_settings = self.settings_manager.get_guild_settings(guild_id)
-        guild_settings["timezone"] = timezone.lower()
-        self.settings_manager.update_guild_settings(guild_id, guild_settings)
+        supabase.table('guild_settings').upsert({
+            'guild_id': guild_id,
+            'timezone': timezone.lower()
+        }).execute()
         
         await interaction.response.send_message(
             locale['commands']['settimezone']['success'].format(timezone=timezone.lower()),
@@ -450,16 +478,18 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
-    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild.id)
         locale = self._get_guild_locale(guild_id)
-        self.settings_manager.load_settings()
-        current_settings = self.settings_manager.get_guild_settings(guild_id)
-        raid_alerts = current_settings.get('raid_alerts', {})
-        raid_alerts['channel_id'] = channel.id
-        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
+        
+        supabase.table('guild_raid_alerts').upsert({
+            'guild_id': guild_id,
+            'alert_channel': channel.id,
+            'enabled': True
+        }).execute()
+
         
         await interaction.response.send_message(
             locale['commands']['setalertchannel']['success'].format(channel=channel.mention),
@@ -467,15 +497,18 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="setalertrole", description="Set the role to tag for raid alerts.")
-    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertrole(self, interaction: discord.Interaction, role: discord.Role):
         guild_id = str(interaction.guild.id)
         locale = self._get_guild_locale(guild_id)
-        current_settings = self.settings_manager.get_guild_settings(guild_id)
-        raid_alerts = current_settings.get('raid_alerts', {})
-        raid_alerts['role_id'] = role.id
-        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
+        # Update the alert role in database
+        supabase.table('guild_raid_alerts').upsert({
+            'guild_id': guild_id,
+            'alert_role': role.id,
+            'enabled': True
+        }).execute()
+
         
         await interaction.response.send_message(
             locale['commands']['setalertrole']['success'].format(role=role.mention),
@@ -483,14 +516,15 @@ class RaidAlert(commands.Cog):
         )
 
     @app_commands.command(name="togglealert", description="Enable or disable the raid alert feature.")
-    #@app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
+    @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def togglealert(self, interaction: discord.Interaction, enabled: bool):
         guild_id = str(interaction.guild.id)
-        current_settings = self.settings_manager.get_guild_settings(guild_id)
-        raid_alerts = current_settings.get('raid_alerts', {})
-        raid_alerts['enabled'] = enabled
-        self.settings_manager.update_guild_settings(guild_id, {'raid_alerts': raid_alerts})
+        supabase.table('guild_raid_alerts').upsert({
+            'guild_id': guild_id,
+            'enabled': enabled
+        }).execute()
+
         state = "enabled" if enabled else "disabled"
         locale = self._get_guild_locale(guild_id)
         await interaction.response.send_message(
@@ -498,36 +532,21 @@ class RaidAlert(commands.Cog):
         )
 
     def _get_guild_timezone(self, guild_id):
-        self.settings_manager.load_settings()
-        guild_settings = self.settings_manager.settings.get(str(guild_id), {})
+        response = supabase.table('guild_settings').select('timezone').eq('guild_id', guild_id).execute()
         return self.timezones.get(
-            guild_settings.get('timezone'),
+            response.data[0].get('timezone') if response.data else 'korea',
             self.default_tz
         )
 
     def _get_guild_locale(self, guild_id):
         try:
-            self.settings_manager.load_settings()
-            guild_settings = self.settings_manager.settings.get(str(guild_id), {})
-            lang = guild_settings.get('language', 'english').lower()
-            lang_map = {'english': 'en', 'portuguese': 'pt', 'spanish': 'es'}
-            lang_code = lang_map.get(lang, 'en')
+            # Get language from guild_settings
+            guild_settings = supabase.table('guild_settings').select('language').eq('guild_id', guild_id).execute().data
+            lang = guild_settings[0].get('language', 'english').lower() if guild_settings else 'english'
             
-            # Get absolute path to locales directory
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            locale_path = os.path.join(base_dir, 'locales', f'{lang_code}.json')
-            
-            self._log("DEBUG", f"⏳ Loading locale for guild {guild_id}: {lang} -> {locale_path}")
-            
-            if not os.path.exists(locale_path):
-                self._log("ERROR", f"❌ Locale file not found: {locale_path}")
-                raise FileNotFoundError(f"❌ Locale file not found: {locale_path}")
-                
-            with open(locale_path, 'r', encoding='utf-8') as f:
-                locale_data = json.load(f)
-                self._log("DEBUG", f"✅ Loaded locale for {guild_id}: {list(locale_data['raid_alerts'].keys())}")
-                return locale_data
-                
+            # Get locale from locales table
+            response = supabase.table('locales').select('*').eq('language', lang).execute()
+            return response.data[0] if response.data else {}
         except Exception as e:
             self._log("ERROR", f"❌ Failed to load locale for guild {guild_id}: {str(e)}")
             return {}
@@ -544,4 +563,3 @@ async def setup(bot):
     # Move all commands to the guild
     for command in cog.walk_app_commands():
         command.guild = discord.Object(id=guild_id)
-    

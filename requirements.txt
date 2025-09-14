@@ -3,3 +3,4 @@ python-dotenv
 PyYAML
 pytz
 pytest
+supabase

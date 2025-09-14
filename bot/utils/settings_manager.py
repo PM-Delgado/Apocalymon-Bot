@@ -1,8 +1,7 @@
-import json
+from bot.main import supabase
 
 class SettingsManager:
     _instance = None
-    SETTINGS_FILE = 'server_settings.json'
     
     def __new__(cls):
         if cls._instance is None:
@@ -11,15 +10,9 @@ class SettingsManager:
         return cls._instance
     
     def load_settings(self):
-        try:
-            with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                self.settings = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.settings = {}
+        response = supabase.table('guild_settings').select('guild_id, settings').execute()
+        self.settings = {str(item['guild_id']): item['settings'] for item in response.data}
     
-    def _save_settings(self):
-        with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(self.settings, f, indent=4)
     
     def get_guild_settings(self, guild_id: str):
         return self.settings.get(str(guild_id), {})
@@ -27,8 +20,12 @@ class SettingsManager:
     def update_guild_settings(self, guild_id: str, new_settings: dict):
         guild_id = str(guild_id)
         current = self.get_guild_settings(guild_id)
-        self.settings[guild_id] = {**current, **new_settings}
-        self._save_settings()
-
+        updated_settings = {**current, **new_settings}
+        self.settings[guild_id] = updated_settings
+        supabase.table('guild_settings').upsert({
+            'guild_id': guild_id,
+            'settings': updated_settings
+        }).execute()
+    
 # Singleton instance for all cogs to use
 settings_manager = SettingsManager()

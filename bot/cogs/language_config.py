@@ -2,14 +2,12 @@ import discord
 import logging
 from discord.ext import commands
 from discord import app_commands
-from bot.utils.settings_manager import settings_manager
-import json
+from bot.main import supabase
 import os
 
 class LanguageConfig(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.settings_manager = settings_manager
 
     @app_commands.command(
         name="setlanguage",
@@ -18,7 +16,11 @@ class LanguageConfig(commands.Cog):
     @app_commands.describe(language="Choose between supported languages: english, portuguese, spanish")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_language(self, interaction: discord.Interaction, language: str) -> None:
-        valid_languages = ['english', 'portuguese', 'spanish']
+        valid_languages = {
+            'english': 'en',
+            'portuguese': 'pt',
+            'spanish': 'es'
+        }
         lang_lower = language.lower()
         
         if lang_lower not in valid_languages:
@@ -26,13 +28,28 @@ class LanguageConfig(commands.Cog):
             return
 
         guild_id = str(interaction.guild.id)
-        self.settings_manager.update_guild_settings(guild_id, {"language": lang_lower})
+        lang_code = valid_languages[lang_lower]
+        
+        # Update guild settings directly via Supabase
+        supabase.table('guild_settings').upsert({
+            'guild_id': guild_id,
+            'language': lang_lower
+        }).execute()
 
-        # Get success message from corresponding locale file
-        lang_map = {'english': 'en', 'portuguese': 'pt', 'spanish': 'es'}
-        with open(f'locales/{lang_map[lang_lower]}.json', 'r', encoding='utf-8') as f:
-            locale = json.load(f)
-        await interaction.response.send_message(locale['commands']['set_language']['success'], ephemeral=True)
+        response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", "set_language.success") \
+            .execute()
+
+        if response.data:
+            success_msg = response.data[0]['value']
+        else:
+            # Fallback if translation missing
+            success_msg = f"Language has been set to {language.capitalize()}"
+
+        await interaction.response.send_message(success_msg, ephemeral=True)
+
         
 async def setup(bot: commands.Bot) -> None:
     cog = LanguageConfig(bot)

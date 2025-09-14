@@ -3,15 +3,18 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import List
-
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 # Initialize environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Configure centralized logging
 logging.basicConfig(
@@ -81,9 +84,49 @@ async def load_cogs() -> None:
             )
 
 @bot.event
+async def on_guild_join(guild: discord.Guild):
+    try:
+        supabase.table("guilds").upsert({
+            "guild_id": guild.id,
+            "name": guild.name
+        }).execute()
+
+        supabase.table("guild_settings").upsert({
+            "guild_id": guild.id,
+            "prefix": "/",
+            "language": "english",
+            "timezone": "london"
+        }).execute()
+
+        logger.info(f"✅ New guild added: {guild.name} ({guild.id}) with default settings")
+    except Exception as e:
+        logger.error(f"❌ Failed to add new guild {guild.name} ({guild.id}): {e}")
+
+
+
+@bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     logger.info(f'Loaded cogs: {list(bot.cogs.keys())}')
+
+    # Backfill Supabase with current guilds
+    for guild in bot.guilds:
+        try:
+            supabase.table("guilds").upsert({
+                "guild_id": guild.id,
+                "name": guild.name
+            }).execute()
+
+            supabase.table("guild_settings").upsert({
+                "guild_id": guild.id,
+                "prefix": "/",
+                "language": "english",
+                "timezone": "london"
+            }).execute()
+
+            logger.info(f"✅ Synced guild {guild.name} ({guild.id}) to Supabase")
+        except Exception as e:
+            logger.error(f"❌ Failed syncing guild {guild.name}: {e}")
     
     for command in bot.tree.walk_commands():
         # Check if it's a guild-specific command
