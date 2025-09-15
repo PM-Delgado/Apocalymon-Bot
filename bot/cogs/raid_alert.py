@@ -458,24 +458,42 @@ class RaidAlert(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def settimezone(self, interaction: discord.Interaction, timezone: str):
         guild_id = str(interaction.guild.id)
-        locale = self._get_guild_locale(guild_id)
         valid_zones = ["korea", "brasilia", "london", "new_york", "los_angeles"]
-        if timezone.lower() not in valid_zones:
-            await interaction.response.send_message(
-                locale['commands']['settimezone']['invalid_timezone'],
-                ephemeral=True
-            )
+
+        language = supabase.table('guild_settings').select('language') \
+                .filter('guild_id', 'eq', guild_id) \
+                .execute()
+            
+        lang_code = language.data[0]['language'] if language.data else 'en'
+
+        if timezone.lower() not in valid_zones: 
+            response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", "settimezone.invalid_timezone") \
+            .execute()
+
+            await interaction.response.send_message(response.data[0]['value'], ephemeral=True)
             return
 
         supabase.table('guild_settings').upsert({
             'guild_id': guild_id,
             'timezone': timezone.lower()
         }).execute()
+
+        response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", "settimezone.success") \
+            .execute()
         
-        await interaction.response.send_message(
-            locale['commands']['settimezone']['success'].format(timezone=timezone.lower()),
-            ephemeral=True
-        )
+        if response.data:
+            success_msg = response.data[0]['value'].format(timezone=timezone.capitalize())
+        else:
+            # Fallback if translation missing
+            success_msg = f"Timezone {timezone.capitalize()} has been set successfully."
+        
+        await interaction.response.send_message(success_msg, ephemeral=True)
 
     @app_commands.command(name="setalertchannel", description="Set the channel for raid alerts.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))

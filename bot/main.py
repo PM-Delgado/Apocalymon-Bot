@@ -94,7 +94,7 @@ async def on_guild_join(guild: discord.Guild):
         supabase.table("guild_settings").upsert({
             "guild_id": guild.id,
             "prefix": "/",
-            "language": "english",
+            "language": "en",
             "timezone": "london"
         }).execute()
 
@@ -108,25 +108,6 @@ async def on_guild_join(guild: discord.Guild):
 async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     logger.info(f'Loaded cogs: {list(bot.cogs.keys())}')
-
-    # Backfill Supabase with current guilds
-    for guild in bot.guilds:
-        try:
-            supabase.table("guilds").upsert({
-                "guild_id": guild.id,
-                "name": guild.name
-            }).execute()
-
-            supabase.table("guild_settings").upsert({
-                "guild_id": guild.id,
-                "prefix": "/",
-                "language": "english",
-                "timezone": "london"
-            }).execute()
-
-            logger.info(f"✅ Synced guild {guild.name} ({guild.id}) to Supabase")
-        except Exception as e:
-            logger.error(f"❌ Failed syncing guild {guild.name}: {e}")
     
     for command in bot.tree.walk_commands():
         # Check if it's a guild-specific command
