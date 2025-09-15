@@ -1,12 +1,13 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from bot.main import supabase
+from bot.utils.settings_manager import settings_manager
 import os
 
 class LanguageConfig(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.settings = settings_manager
 
     @app_commands.command(
         name="setlanguage",
@@ -26,39 +27,16 @@ class LanguageConfig(commands.Cog):
         guild_id = str(interaction.guild.id)
         
         if lang_lower not in valid_languages:
-            prev_language = supabase.table('guild_settings').select('language') \
-                .filter('guild_id', 'eq', guild_id) \
-                .execute()
-            
-            prev_lang_code = prev_language.data[0]['language'] if prev_language.data else 'en'
-            response = supabase.table('locales').select("value") \
-                .filter("language", "eq", prev_lang_code) \
-                .filter("namespace", "eq", "commands") \
-                .filter("key", "eq", "set_language.invalid_language") \
-                .execute()
-            
-            invalid_language = response.data[0]['value']
-            await interaction.followup.send(invalid_language, ephemeral=True)
+            invalid_msg = self.settings.get_localization(guild_id).get('commands', {}).get('set_language.invalid_language')
+            await interaction.followup.send(invalid_msg, ephemeral=True)
             return
 
         lang_code = valid_languages[lang_lower]
 
-        supabase.table('guild_settings').upsert({
-            'guild_id': guild_id,
-            'language': lang_code
-        }).execute()
-
-        response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", "set_language.success") \
-            .execute()
-
-        if response.data:
-            success_msg = response.data[0]['value']
-        else:
-            # Fallback if translation missing
-            success_msg = f"Language has been set to {language.capitalize()}"
+        self.settings.update_guild_settings(guild_id, {'language': lang_code})
+        response = self.settings.get_localization(guild_id).get('commands', {}).get('set_language.success')
+        
+        success_msg = response or f"Language has been set to {language.capitalize()}"
 
         await interaction.followup.send(success_msg, ephemeral=True)
 

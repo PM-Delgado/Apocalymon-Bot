@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import yaml
 from bot.main import supabase
+from bot.utils.settings_manager import settings_manager
 
 from datetime import datetime, timedelta
 import pytz
@@ -14,6 +15,7 @@ import re
 class RaidAlert(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.settings = settings_manager
         self.guild_alert_config = {}
         self.sent_messages = {}
         self.completed_raids = set()
@@ -460,37 +462,19 @@ class RaidAlert(commands.Cog):
         guild_id = str(interaction.guild.id)
         valid_zones = ["korea", "brasilia", "london", "new_york", "los_angeles"]
 
-        language = supabase.table('guild_settings').select('language') \
-                .filter('guild_id', 'eq', guild_id) \
-                .execute()
-            
-        lang_code = language.data[0]['language'] if language.data else 'en'
-
         if timezone.lower() not in valid_zones: 
-            response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", "settimezone.invalid_timezone") \
-            .execute()
+            response = self.settings.get_localization(guild_id).get('commands', {}).get('settimezone.invalid_timezone')
 
-            await interaction.response.send_message(response.data[0]['value'], ephemeral=True)
+            await interaction.response.send_message(response, ephemeral=True)
             return
 
-        supabase.table('guild_settings').upsert({
-            'guild_id': guild_id,
-            'timezone': timezone.lower()
-        }).execute()
-
-        response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", "settimezone.success") \
-            .execute()
+        self.settings.update_guild_settings(guild_id, {'timezone': timezone.lower()})
         
-        if response.data:
-            success_msg = response.data[0]['value'].format(timezone=timezone.capitalize())
+        response = self.settings.get_localization(guild_id).get('commands', {}).get('settimezone.success')
+        
+        if response not in (None, {}):
+            success_msg = response.format(timezone=timezone.capitalize())
         else:
-            # Fallback if translation missing
             success_msg = f"Timezone {timezone.capitalize()} has been set successfully."
         
         await interaction.response.send_message(success_msg, ephemeral=True)
@@ -501,28 +485,16 @@ class RaidAlert(commands.Cog):
     async def setalertchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild.id)
 
-        language = supabase.table('guild_settings').select('language') \
-                .filter('guild_id', 'eq', guild_id) \
-                .execute()
-            
-        lang_code = language.data[0]['language'] if language.data else 'en'
-        
-        supabase.table('guild_raid_alerts').upsert({
-            'guild_id': guild_id,
+        self.settings.update_raid_alerts(guild_id, {
             'alert_channel': channel.id,
             'enabled': True
-        }).execute()
+        })
 
-        response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", "setalertchannel.success") \
-            .execute()
-        
-        if response.data:
-            success_msg = response.data[0]['value'].format(channel=channel.mention)
+        response = self.settings.get_localization(guild_id).get('commands', {}).get('setalertchannel.success')
+
+        if response not in (None, {}):
+            success_msg = response.format(channel=channel.mention)
         else:
-            # Fallback if translation missing
             success_msg = f"Channel {channel.mention} has been successfully set as the Raid Alert channel."
         
         await interaction.response.send_message(success_msg, ephemeral=True)
@@ -533,28 +505,15 @@ class RaidAlert(commands.Cog):
     async def setalertrole(self, interaction: discord.Interaction, role: discord.Role):
         guild_id = str(interaction.guild.id)
 
-        language = supabase.table('guild_settings').select('language') \
-                .filter('guild_id', 'eq', guild_id) \
-                .execute()
-            
-        lang_code = language.data[0]['language'] if language.data else 'en'
+        self.settings.update_raid_alerts(guild_id, {
+            'alert_role': role.id
+        })
 
-        supabase.table('guild_raid_alerts').upsert({
-            'guild_id': guild_id,
-            'alert_role': role.id,
-            'enabled': True
-        }).execute()
+        response = self.settings.get_localization(guild_id).get('commands', {}).get('setalertrole.success')
 
-        response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", "setalertrole.success") \
-            .execute()
-        
-        if response.data:
-            success_msg = response.data[0]['value'].format(role=role.mention)
+        if response not in (None, {}):
+            success_msg = response.format(role=role.mention)
         else:
-            # Fallback if translation missing
             success_msg = f"Role {role.mention} has been successfully set as the Raid Alert role to mention."
         
         await interaction.response.send_message(success_msg, ephemeral=True)
@@ -565,52 +524,18 @@ class RaidAlert(commands.Cog):
     async def togglealert(self, interaction: discord.Interaction, enabled: bool):
         guild_id = str(interaction.guild.id)
 
-        language = supabase.table('guild_settings').select('language') \
-                .filter('guild_id', 'eq', guild_id) \
-                .execute()
-            
-        lang_code = language.data[0]['language'] if language.data else 'en'
-
-        supabase.table('guild_raid_alerts').upsert({
-            'guild_id': guild_id,
-            'enabled': enabled
-        }).execute()
-
+        self.settings.update_raid_alerts(guild_id, {'enabled': enabled})
         state = "enabled" if enabled else "disabled"
 
-        response = supabase.table('locales').select("*") \
-            .filter("language", "eq", lang_code) \
-            .filter("namespace", "eq", "commands") \
-            .filter("key", "eq", f"togglealert.success_{state}") \
-            .execute()
+        response = self.settings.get_localization(guild_id).get('commands', {}).get(f'togglealert.success_{state}')
         
-        if response.data:
-            success_msg = response.data[0]['value']
-        else:
-            # Fallback if translation missing
-            success_msg = f"Raid Alert feature has been {state}."
-        
-        await interaction.response.send_message(success_msg, ephemeral=True)
+        await interaction.response.send_message(response, ephemeral=True)
 
     def _get_guild_timezone(self, guild_id):
-        response = supabase.table('guild_settings').select('timezone').eq('guild_id', guild_id).execute()
-        return self.timezones.get(
-            response.data[0].get('timezone') if response.data else 'korea',
-            self.default_tz
-        )
+        return self.settings.get_timezone(guild_id)
 
     def _get_guild_locale(self, guild_id):
-        try:
-            # Get language from guild_settings
-            guild_settings = supabase.table('guild_settings').select('language').eq('guild_id', guild_id).execute().data
-            lang = guild_settings[0].get('language', 'english').lower() if guild_settings else 'english'
-            
-            # Get locale from locales table
-            response = supabase.table('locales').select('*').eq('language', lang).execute()
-            return response.data[0] if response.data else {}
-        except Exception as e:
-            self._log("ERROR", f"❌ Failed to load locale for guild {guild_id}: {str(e)}")
-            return {}
+        return self.settings.get_localization(guild_id)
 
 ###########################################################
 # Cog Setup
