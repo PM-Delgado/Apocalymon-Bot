@@ -1,4 +1,5 @@
 import pytest
+import pytz
 from unittest.mock import MagicMock, patch
 from bot.cogs.raid_alert import RaidAlert
 from datetime import datetime
@@ -12,13 +13,20 @@ from datetime import datetime
 ])
 def test_embed_content_for_locales_and_timezones(language, timezone, expected_gmt):
     bot = MagicMock()
+    timezones = {
+        "korea": pytz.timezone("Asia/Seoul"),
+        "brasilia": pytz.timezone("America/Sao_Paulo"),
+        "london": pytz.timezone("Europe/London"),
+        "new_york": pytz.timezone("America/New_York"),
+        "los_angeles": pytz.timezone("America/Los_Angeles")
+    }
     with patch.object(RaidAlert, "_raid_alert_loop", create=True):
         cog = RaidAlert(bot)
         guild_id = "123456"
         cog.settings_manager.update_guild_settings(guild_id, {"language": language})
         
         with patch.object(cog, '_get_guild_timezone') as mock_tz:
-            mock_tz.return_value = cog.timezones[timezone]
+            mock_tz.return_value = timezones[timezone]
             raid = {
                 "name": "🪽 Andromon",
                 "map": "Gear Savannah",

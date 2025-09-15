@@ -2,14 +2,12 @@ import discord
 import logging
 from discord import app_commands
 from discord.ext import commands, tasks
-import yaml
 from bot.main import supabase
 from bot.utils.settings_manager import settings_manager
 
 from datetime import datetime, timedelta
 import pytz
 import os
-import json
 import re
 
 class RaidAlert(commands.Cog):
@@ -19,16 +17,8 @@ class RaidAlert(commands.Cog):
         self.guild_alert_config = {}
         self.sent_messages = {}
         self.completed_raids = set()
-        # Timezones
-        self.timezones = {
-            "korea": pytz.timezone("Asia/Seoul"),
-            "brasilia": pytz.timezone("America/Sao_Paulo"),
-            "london": pytz.timezone("Europe/London"),
-            "new_york": pytz.timezone("America/New_York"),
-            "los_angeles": pytz.timezone("America/Los_Angeles")
-        }
-        self.default_tz = self.timezones["korea"]
-        self.lisbon = self.timezones["london"] # Logs timezone
+        self.default_tz = pytz.timezone("Asia/Seoul") # Timezone to compute raid alerts
+        self.lisbon = pytz.timezone("Europe/Lisbon") # Logs timezone
         # Raid cleanup
         self.last_cleanup_time = None
         self.COMPLETED_RAIDS_CLEANUP_INTERVAL = 7 * 24 * 60 * 60
@@ -148,8 +138,8 @@ class RaidAlert(commands.Cog):
     def _create_embed_content(self, raid, time_until_raid_seconds):
         # Build Discord embed for raid alert
         guild_id = raid.get('guild_id')
-        locale = self._get_guild_locale(guild_id)
-        tz = self._get_guild_timezone(guild_id)
+        locale = self.settings.get_localization(guild_id)
+        tz = self.settings.get_timezone(guild_id)
         display_time = raid["next_time"].astimezone(tz)
         minutes_until = self._get_remaining_minutes(int(time_until_raid_seconds))
         clean_name = self._clean_boss_name(raid['name'])
@@ -193,7 +183,7 @@ class RaidAlert(commands.Cog):
     def _create_message_content(self, raid, time_until_raid_seconds, role_mention, status):
         # Build message content for raid alert
         guild_id = raid.get('guild_id')
-        locale = self._get_guild_locale(guild_id)
+        locale = self.settings.get_localization(guild_id)
         raid_alerts = locale.get('raid_alerts', {})
         minutes_until = self._get_remaining_minutes(int(time_until_raid_seconds))
         
@@ -448,7 +438,7 @@ class RaidAlert(commands.Cog):
         self.test_raids = [(gid, r) for (gid, r) in self.test_raids if gid != guild_id]
         self.test_raids.append((guild_id, dummy_raid))
         await self._send_or_update_raid_alert(guild_id, dummy_raid)
-        locale = self._get_guild_locale(str(guild_id))
+        locale = self.settings.get_localization(str(guild_id))
         await interaction.response.send_message(
             locale['commands']['testalert']['success'],
             ephemeral=True
@@ -530,12 +520,6 @@ class RaidAlert(commands.Cog):
         response = self.settings.get_localization(guild_id).get('commands', {}).get(f'togglealert.success_{state}')
         
         await interaction.response.send_message(response, ephemeral=True)
-
-    def _get_guild_timezone(self, guild_id):
-        return self.settings.get_timezone(guild_id)
-
-    def _get_guild_locale(self, guild_id):
-        return self.settings.get_localization(guild_id)
 
 ###########################################################
 # Cog Setup
