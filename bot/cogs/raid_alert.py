@@ -500,7 +500,12 @@ class RaidAlert(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild.id)
-        locale = self._get_guild_locale(guild_id)
+
+        language = supabase.table('guild_settings').select('language') \
+                .filter('guild_id', 'eq', guild_id) \
+                .execute()
+            
+        lang_code = language.data[0]['language'] if language.data else 'en'
         
         supabase.table('guild_raid_alerts').upsert({
             'guild_id': guild_id,
@@ -508,46 +513,84 @@ class RaidAlert(commands.Cog):
             'enabled': True
         }).execute()
 
+        response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", "setalertchannel.success") \
+            .execute()
         
-        await interaction.response.send_message(
-            locale['commands']['setalertchannel']['success'].format(channel=channel.mention),
-            ephemeral=True
-        )
+        if response.data:
+            success_msg = response.data[0]['value'].format(channel=channel.mention)
+        else:
+            # Fallback if translation missing
+            success_msg = f"Channel {channel.mention} has been successfully set as the Raid Alert channel."
+        
+        await interaction.response.send_message(success_msg, ephemeral=True)
 
     @app_commands.command(name="setalertrole", description="Set the role to tag for raid alerts.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def setalertrole(self, interaction: discord.Interaction, role: discord.Role):
         guild_id = str(interaction.guild.id)
-        locale = self._get_guild_locale(guild_id)
-        # Update the alert role in database
+
+        language = supabase.table('guild_settings').select('language') \
+                .filter('guild_id', 'eq', guild_id) \
+                .execute()
+            
+        lang_code = language.data[0]['language'] if language.data else 'en'
+
         supabase.table('guild_raid_alerts').upsert({
             'guild_id': guild_id,
             'alert_role': role.id,
             'enabled': True
         }).execute()
 
+        response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", "setalertrole.success") \
+            .execute()
         
-        await interaction.response.send_message(
-            locale['commands']['setalertrole']['success'].format(role=role.mention),
-            ephemeral=True
-        )
+        if response.data:
+            success_msg = response.data[0]['value'].format(role=role.mention)
+        else:
+            # Fallback if translation missing
+            success_msg = f"Role {role.mention} has been successfully set as the Raid Alert role to mention."
+        
+        await interaction.response.send_message(success_msg, ephemeral=True)
 
     @app_commands.command(name="togglealert", description="Enable or disable the raid alert feature.")
     @app_commands.guilds(discord.Object(id=int(os.getenv('GUILD_ID'))))
     @app_commands.checks.has_permissions(administrator=True)
     async def togglealert(self, interaction: discord.Interaction, enabled: bool):
         guild_id = str(interaction.guild.id)
+
+        language = supabase.table('guild_settings').select('language') \
+                .filter('guild_id', 'eq', guild_id) \
+                .execute()
+            
+        lang_code = language.data[0]['language'] if language.data else 'en'
+
         supabase.table('guild_raid_alerts').upsert({
             'guild_id': guild_id,
             'enabled': enabled
         }).execute()
 
         state = "enabled" if enabled else "disabled"
-        locale = self._get_guild_locale(guild_id)
-        await interaction.response.send_message(
-            locale['commands']['togglealert'][f'success_{state}'], ephemeral=True
-        )
+
+        response = supabase.table('locales').select("*") \
+            .filter("language", "eq", lang_code) \
+            .filter("namespace", "eq", "commands") \
+            .filter("key", "eq", f"togglealert.success_{state}") \
+            .execute()
+        
+        if response.data:
+            success_msg = response.data[0]['value']
+        else:
+            # Fallback if translation missing
+            success_msg = f"Raid Alert feature has been {state}."
+        
+        await interaction.response.send_message(success_msg, ephemeral=True)
 
     def _get_guild_timezone(self, guild_id):
         response = supabase.table('guild_settings').select('timezone').eq('guild_id', guild_id).execute()
